@@ -1,0 +1,461 @@
+# 步进电机S型加减速控制系统 - 完整项目文档
+
+---
+
+## 一、项目概述
+
+基于STM32F103C8T6的步进电机控制系统，使用S曲线查表法实现平滑加减速，支持上位机控制。
+
+主要功能：
+- S型加减速（查表法）
+- 支持步数、毫米、圈数三种运动模式
+- 自动往返运动
+- 最高频率50kHz
+- 高电平时间≥20us（适配所有驱动器）
+- 上位机控制界面（Python）
+
+---
+
+## 二、硬件接线
+
+### 核心接线（只需3根线控制电机）
+
+STM32F103C8T6              步进电机驱动器
+PA0  ---- PUL ----> PUL+
+PA1  ---- DIR ----> DIR+
+GND  ---- GND ----> GND
+
+驱动器 A+/A-/B+/B- 连接步进电机四线
+
+### 完整接线图
+
+STM32 PA0     -> 驱动器 PUL+
+STM32 PA1     -> 驱动器 DIR+
+STM32 GND     -> 驱动器 GND（必须共地）
+STM32 PA9     -> USB转串口 RX
+STM32 PA10    -> USB转串口 TX
+STM32 GND     -> USB转串口 GND
+STM32 PA13    -> ST-Link SWDIO
+STM32 PA14    -> ST-Link SWCLK
+STM32 GND     -> ST-Link GND
+STM32 3.3V    -> ST-Link 3.3V
+
+### 引脚功能表
+
+PA0  - TIM2_CH1 - 脉冲输出，PWM信号，连接PUL+
+PA1  - GPIO输出 - 方向控制，高电平=反转，低电平=正转
+PA9  - USART1_TX - 串口发送
+PA10 - USART1_RX - 串口接收
+PA13 - SWDIO - 调试/下载
+PA14 - SWCLK - 调试/下载
+
+---
+
+## 三、系统参数
+
+### 定时器配置
+
+定时器：TIM2
+时钟源：72MHz
+PSC：35（预分频，72MHz/(35+1)=2MHz）
+计数频率：2MHz（每个计数0.5us）
+最小ARR：40（保证高电平>=20us）
+最高频率：50kHz（ARR=39）
+
+### S曲线参数
+
+加速步数：200（加速阶段脉冲数）
+减速步数：200（减速阶段脉冲数）
+匀速ARR：39（对应50kHz）
+加速表长度：200（查找表大小）
+减速表长度：200（查找表大小）
+
+---
+
+## 四、通信协议
+
+### 协议格式
+
+命令格式：$命令,参数1,参数2,...\r\n
+
+### 命令列表
+
+$SET,PPR,3200        设置每圈脉冲数
+$SET,PPM,25          设置每毫米脉冲数
+$SET,MAXFREQ,50000   设置最高频率Hz
+$SET,ACCEL,200       设置加速步数
+$SET,DECEL,200       设置减速步数
+$MOVE,STEPS,1000,0   按步数运动（0=正转，1=反转）
+$MOVE,MM,50,0        按毫米运动
+$MOVE,REV,5,0        按圈数运动
+$RETURN,3            设置往返次数（0=不往返）
+$STOP                正常停止（减速后停）
+$ESTOP               急停（立即停止）
+$STATUS              查询状态
+$RESET               复位（清除所有状态）
+
+### 返回格式
+
+状态返回：STATUS,POS=1234,STATE=ACCEL,RET=1/3
+成功返回：OK:MOVE 1000
+错误返回：ERR:BUSY / ERR:PARAM / ERR:ZERO
+往返返回：RETURN 1/3
+完成返回：RETURN DONE
+
+### 可设置参数说明
+
+PPR - 每圈脉冲数（默认200，根据驱动器细分设置）
+PPM - 每毫米脉冲数（默认200，根据丝杆导程计算）
+MAXFREQ - 最高频率Hz（默认50000，范围100-50000）
+ACCEL - 加速步数（默认200，范围1-200）
+DECEL - 减速步数（默认200，范围1-200）
+
+---
+
+## 五、使用步骤
+
+### 1. 硬件准备
+
+- STM32F103C8T6最小系统板（蓝色小板）
+- 步进电机驱动器（如A4988、TMC2209、TB6600等）
+- 步进电机（42/57/86步进电机）
+- USB转串口模块
+- ST-Link下载器
+- 12-24V电源（给驱动器供电）
+- 杜邦线若干
+
+### 2. 接线
+
+1. STM32 PA0 -> 驱动器 PUL+
+2. STM32 PA1 -> 驱动器 DIR+
+3. STM32 GND -> 驱动器 GND
+4. 驱动器 A+/A-/B+/B- -> 步进电机四线
+5. 驱动器 VCC/GND -> 电源
+6. USB转串口 TX -> STM32 PA10
+7. USB转串口 RX -> STM32 PA9
+8. USB转串口 GND -> STM32 GND
+9. ST-Link -> STM32 SWD接口
+
+### 3. 软件准备
+
+- 安装 Keil MDK-ARM v5
+- 安装 STM32CubeMX
+- 安装 Python 3.x
+- 安装 pyserial库：pip install pyserial
+
+### 4. 编译下载
+
+1. 用Keil打开工程
+2. 按F7编译，确认0 Error
+3. 连接ST-Link
+4. 按F8下载到芯片
+5. 按复位键运行
+
+### 5. 上位机使用
+
+1. 运行 stepper_gui.py
+2. 选择正确的串口号
+3. 波特率选择 115200
+4. 点击"连接"
+5. 确认显示"●已连接"
+
+---
+
+## 六、上位机界面说明
+
+### 界面布局
+
+串口连接区：COM口选择、波特率、刷新、连接按钮、连接状态
+参数设置区：每圈脉冲数、每mm脉冲数、最高频率、加速步数、减速步数、应用参数按钮
+运动控制区：运动方式（步数/毫米/圈数）、运动量、方向（正转/反转）、往返次数、开始/停止/急停/复位按钮
+状态显示区：当前位置（步）、运动状态、往返计数
+日志区：串口收发记录
+快捷按钮区：查询状态、正转100步、反转100步、正转1圈、反转1圈
+
+### 操作流程
+
+步骤1：连接串口
+  - 选择COM口
+  - 点击"连接"
+  - 确认"●已连接"
+
+步骤2：设置参数（首次使用）
+  - 输入每圈脉冲数（如200、3200等，根据驱动器细分设置）
+  - 输入每mm脉冲数（根据丝杆导程计算）
+  - 设置最高频率（建议10000-50000）
+  - 设置加速/减速步数（建议100-300）
+  - 点击"应用参数"
+
+步骤3：运动控制
+  - 选择运动方式（步数/毫米/圈数）
+  - 输入运动量
+  - 选择方向（正转/反转）
+  - 设置往返次数（0=不往返）
+  - 点击"开始"
+
+步骤4：停止控制
+  - "停止"：减速后停止
+  - "急停"：立即停止
+  - "复位"：清除所有状态
+
+---
+
+## 七、参数计算
+
+### 每圈脉冲数（PPR）
+
+PPR = 电机步距角步数 x 驱动器细分
+
+示例：
+  1.8度电机 = 200步/圈
+  细分16 -> PPR = 200 x 16 = 3200
+
+### 每毫米脉冲数（PPM）
+
+PPM = PPR / 丝杆导程(mm)
+
+示例：
+  PPR = 3200
+  丝杆导程 = 5mm
+  PPM = 3200 / 5 = 640
+
+### 频率与转速
+
+转速(rpm) = 频率(Hz) x 60 / PPR
+
+示例：
+  频率 = 50kHz = 50000Hz
+  PPR = 3200
+  转速 = 50000 x 60 / 3200 = 937.5 rpm
+
+---
+
+## 八、常见问题
+
+### Q1：电机不转
+
+检查项：
+- 驱动器是否上电（电源指示灯）
+- PUL+/DIR+/GND是否接对
+- STM32是否正常运行（串口有输出）
+- 发送$STATUS是否有回复
+- 驱动器使能引脚是否正确
+
+### Q2：频率达不到设置值
+
+检查项：
+- 确认PSC=35（tim.c中）
+- 确认MAX_FREQ=50000（stepper.h中）
+- 确认main.c中限制改为50000
+- 重新编译下载
+
+### Q3：往返模式不工作
+
+检查项：
+- 往返次数是否大于0
+- 发送$RETURN,3后再$MOVE
+- 查看状态中RET显示
+
+### Q4：串口无响应
+
+检查项：
+- USB转串口是否连接正确（TX/RX交叉）
+- GND是否共地
+- 波特率是否115200
+- 串口号是否选对
+
+### Q5：电机抖动不转
+
+检查项：
+- PUL和DIR接线是否接反
+- 驱动器细分设置是否正确
+- 电机线序是否正确
+
+---
+
+## 九、文件清单
+
+STM32工程文件：
+  Core/Inc/main.h - 主程序头文件
+  Core/Inc/stepper.h - 步进电机头文件
+  Core/Inc/tim.h - 定时器头文件
+  Core/Inc/usart.h - 串口头文件
+  Core/Inc/gpio.h - GPIO头文件
+  Core/Src/main.c - 主程序
+  Core/Src/stepper.c - 步进电机驱动
+  Core/Src/tim.c - 定时器配置
+  Core/Src/usart.c - 串口配置
+  Core/Src/gpio.c - GPIO配置
+  A4988.uvprojx - Keil工程文件
+
+上位机文件：
+  stepper_gui.py - Python上位机
+
+---
+
+## 十、技术总结
+
+项目名称：步进电机S型加减速控制系统
+主控芯片：STM32F103C8T6
+开发环境：Keil MDK-ARM v5
+配置工具：STM32CubeMX
+上位机：Python + Tkinter + PySerial
+通信方式：串口 115200-8-N-1
+控制引脚：PA0(脉冲)、PA1(方向)
+加速方式：S曲线查表法
+最高频率：50kHz
+脉冲宽度：>=20us（适配所有驱动器）
+加减速步数：200步（可配置）
+支持模式：步数、毫米、圈数
+往返功能：支持，可设置次数
+
+---
+
+## 十一、CubeMX配置要点
+
+### RCC配置
+HSE: Crystal/Ceramic Resonator
+
+### SYS配置
+Debug: Serial Wire
+
+### USART1配置
+Mode: Asynchronous
+Baud Rate: 115200
+Word Length: 8 Bits
+Stop Bits: 1
+Parity: None
+
+### TIM2配置
+Clock Source: Internal Clock
+Channel1: PWM Generation CH1
+Prescaler: 35
+Counter Mode: Up
+Counter Period: 9999
+PWM Mode: PWM mode 1
+Pulse: 0
+CH Polarity: High
+NVIC: TIM2 global interrupt 勾选
+
+### GPIO配置
+PA1: GPIO_Output, Low, Output Push Pull, No pull, User Label: DIR
+
+### 时钟树
+HCLK: 72MHz
+SYSCLK: 72MHz
+APB1: 36MHz
+APB2: 72MHz
+
+---
+
+## 十二、代码结构
+
+### stepper.h
+
+引脚定义（DIR_PORT, DIR_PIN）
+定时器参数（TIM_FREQ, MIN_ARR, MAX_FREQ）
+S曲线参数（ACCEL_LEN, DECEL_LEN）
+运动状态枚举（MotorState）
+电机结构体（Stepper_t）
+函数声明（Stepper_Init, Stepper_Start, Stepper_Stop等）
+
+### stepper.c
+
+加速段查找表（accel_lut[200]）
+减速段查找表（decel_lut[200]）
+内部函数（LimitARR, SetPWM, FreqToArr）
+公共函数（Stepper_Init, Stepper_Start, Stepper_Stop, Stepper_EStop, Stepper_OnTimer）
+
+### main.c
+
+串口变量（rx_byte, rx_buf, rx_idx, rx_done）
+UART_Send函数
+主循环（往返处理、串口接收、命令解析）
+SystemClock_Config函数
+HAL_TIM_PeriodElapsedCallback函数
+
+---
+
+## 十三、驱动器细分设置
+
+### A4988驱动器
+
+MS1  MS2  MS3  细分
+Low  Low  Low  全步
+High Low  Low  1/2步
+Low  High Low  1/4步
+High High Low  1/8步
+High High High 1/16步
+
+### TMC2209驱动器
+
+通过UART或CFG引脚设置细分
+默认1/16细分
+1/256细分通过UART配置
+
+### TB6600驱动器
+
+通过拨码开关设置细分
+SW1 SW2 SW3 细分
+OFF OFF OFF 全步
+ON  OFF OFF 半步
+OFF ON  OFF 1/4步
+ON  ON  OFF 1/8步
+OFF OFF ON  1/16步
+ON  OFF ON  1/32步
+OFF ON  ON  1/64步
+ON  ON  ON  1/128步
+
+---
+
+## 十四、电源选择
+
+### 电压选择
+
+42步进电机：12-24V
+57步进电机：24-48V
+86步进电机：36-60V
+
+### 电流设置
+
+电机电流 <= 驱动器最大电流
+通过驱动器电位器调节电流
+
+---
+
+## 十五、调试方法
+
+### 串口调试
+
+1. 打开串口助手（115200, 8, N, 1）
+2. 发送 $STATUS 查询状态
+3. 发送 $MOVE,STEPS,100,0 测试运动
+4. 观察返回信息判断问题
+
+### 示波器调试
+
+1. 探头接PA0（脉冲输出）
+2. 观察频率和占空比
+3. 高电平时间应>=20us
+4. 频率应与设置值一致
+
+### LED指示
+
+PA4 - 运行指示灯（可选）
+PA5 - 错误指示灯（可选）
+
+---
+
+## 十六、注意事项
+
+1. 必须共地：STM32、驱动器、USB转串口的GND必须连在一起
+2. 电源顺序：先给驱动器上电，再给STM32上电
+3. 电机线序：如果电机不转或抖动，尝试交换A+/A-或B+/B-
+4. 细分设置：PPR必须与驱动器细分设置一致
+5. 频率限制：最高50kHz，过高可能导致电机失步
+6. 加速步数：过少可能导致电机启动困难，过多可能导致加速时间过长
+
+---
+
+文档版本：v1.0
+最后更新：2025年
